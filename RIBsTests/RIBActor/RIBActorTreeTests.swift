@@ -3,7 +3,7 @@ import RxSwift
 import UIKit
 import XCTest
 
-// A RIB tree that runs on one serial tree queue. Main keeps its run loop running, creates the view controllers
+// A RIB tree that runs on one serial RIBActor queue. Main keeps its run loop running, creates the view controllers
 // and calls them; it never calls a Router or an Interactor. The real `LeakDetector` is on with its assertion
 // armed, so a false leak report stops the test process.
 
@@ -110,7 +110,7 @@ private final class TreeComponent: Component<EmptyDependency> {
 private typealias TreeRouter = Router<TreeInteractor>
 private typealias TreeViewableRouter = ViewableRouter<TreeViewfulInteractor, TreeViewController>
 
-/// Fields are read and written on the tree queue only.
+/// Fields are read and written on the RIBActor queue only.
 private final class TreeState {
     var root: TreeRouter?
     var parent: TreeRouter?
@@ -123,7 +123,7 @@ private final class TreeState {
     }
 }
 
-final class TreeQueueTreeTests: TreeQueueTestCase {
+final class RIBActorTreeTests: RIBActorTestCase {
 
     static let iterations = 300
 
@@ -144,7 +144,7 @@ final class TreeQueueTreeTests: TreeQueueTestCase {
         let state = self.state, tree = self.tree, log = self.log
         onTree {
             let root = TreeRouter(interactor: TreeInteractor(log: log))
-            root.treeQueue = tree
+            root.ribActorQueue = tree
             root.interactable.activate()
             root.load()
             state.root = root
@@ -153,8 +153,8 @@ final class TreeQueueTreeTests: TreeQueueTestCase {
 
     // MARK: - Tests
 
-    /// The view controller, the Interactor and the Router are built on main and attached on the tree queue.
-    func test_viewfulChild_builtOnMain_attachedOnTreeQueue() {
+    /// The view controller, the Interactor and the Router are built on main and attached on the RIBActor queue.
+    func test_viewfulChild_builtOnMain_attachedOnRIBActorQueue() {
         let state = self.state, tree = self.tree, log = self.log
         iterate { index, done in
             let viewController = TreeViewController()
@@ -186,8 +186,8 @@ final class TreeQueueTreeTests: TreeQueueTestCase {
     }
 
     /// The view controller is built on main first; the Component, the Interactor and the Router are built and
-    /// attached on the tree queue.
-    func test_viewfulChild_viewOnMain_logicBuiltOnTreeQueue() {
+    /// attached on the RIBActor queue.
+    func test_viewfulChild_viewOnMain_logicBuiltOnRIBActorQueue() {
         let state = self.state, tree = self.tree, log = self.log
         iterate { index, done in
             let viewController = TreeViewController()
@@ -291,7 +291,7 @@ final class TreeQueueTreeTests: TreeQueueTestCase {
 
     /// A Worker started in `didBecomeActive`, with an Rx interval on a scheduler whose queue targets the tree
     /// queue. `attachChild` from the Rx closure passes the check.
-    func test_worker_startedInDidBecomeActive_runsOnTreeQueue() {
+    func test_worker_startedInDidBecomeActive_runsOnRIBActorQueue() {
         let state = self.state, tree = self.tree, log = self.log
         iterate { _, done in
             tree.async {
@@ -331,7 +331,7 @@ final class TreeQueueTreeTests: TreeQueueTestCase {
         finish(expectedActivations: nil)
     }
 
-    /// The Router holds the last reference to the view controller and is released on the tree queue.
+    /// The Router holds the last reference to the view controller and is released on the RIBActor queue.
     func test_viewfulChild_routerHoldsTheLastViewControllerReference() {
         let state = self.state, tree = self.tree, log = self.log
         iterate { _, done in
@@ -381,7 +381,7 @@ final class TreeQueueTreeTests: TreeQueueTestCase {
         liveViewControllers[index] = nil
     }
 
-    /// Releases the tree on the tree queue, waits for every pending leak check, then asserts.
+    /// Releases the tree on the RIBActor queue, waits for every pending leak check, then asserts.
     private func finish(expectedActivations: Int?) {
         let state = self.state
         let problems: [String] = onTree {

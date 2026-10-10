@@ -1,9 +1,9 @@
 @testable import RIBs
 import XCTest
 
-/// The thread of the last release. The tree queue check does not run in `deinit`, so a detached RIB can be
+/// The thread of the last release. The RIBActor check does not run in `deinit`, so a detached RIB can be
 /// released on any thread.
-final class TreeQueueReleaseTests: TreeQueueTestCase {
+final class RIBActorReleaseTests: RIBActorTestCase {
 
     private var root: Router<Interactor>!
 
@@ -12,7 +12,7 @@ final class TreeQueueReleaseTests: TreeQueueTestCase {
         let tree = self.tree
         root = onTree {
             let root = Router<Interactor>(interactor: InteractorMock())
-            root.treeQueue = tree
+            root.ribActorQueue = tree
             root.interactable.activate()
             root.load()
             return root
@@ -64,7 +64,7 @@ final class TreeQueueReleaseTests: TreeQueueTestCase {
         var resignedOnMain: Bool?
         var interactor: InteractorMock? = onTree {
             let interactor = InteractorMock()
-            interactor.treeQueue = tree
+            interactor.ribActorQueue = tree
             interactor.activate()
             return interactor
         }
@@ -83,7 +83,7 @@ final class TreeQueueReleaseTests: TreeQueueTestCase {
         let tree = self.tree
         var routers: [Router<Interactor>] = [onTree {
             let router = Router<Interactor>(interactor: InteractorMock())
-            router.treeQueue = tree
+            router.ribActorQueue = tree
             router.interactable.activate()
             router.load()
             router.attachChild(Router<Interactor>(interactor: InteractorMock()))

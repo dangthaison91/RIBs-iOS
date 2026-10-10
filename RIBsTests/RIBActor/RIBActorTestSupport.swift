@@ -7,8 +7,8 @@ func currentQueueLabel() -> String {
     String(cString: __dispatch_queue_get_label(nil))
 }
 
-/// Records the messages of the tree queue check. Thread-safe.
-final class TreeQueueFailureRecorder {
+/// Records the messages of the RIBActor check. Thread-safe.
+final class RIBActorFailureRecorder {
     private let lock = NSLock()
     private var recorded: [String] = []
 
@@ -41,27 +41,27 @@ final class QueueLog {
     }
 }
 
-/// A test case with one serial tree queue. The tree queue check records its failures in `failures` and does not
+/// A test case with one serial RIBActor queue. The RIBActor check records its failures in `failures` and does not
 /// stop the process, so a test can assert on a wrong-thread call.
-class TreeQueueTestCase: XCTestCase {
+class RIBActorTestCase: XCTestCase {
     static let treeLabel = "ribs.tests.tree"
-    let tree = DispatchQueue(label: TreeQueueTestCase.treeLabel)
-    let failures = TreeQueueFailureRecorder()
+    let tree = DispatchQueue(label: RIBActorTestCase.treeLabel)
+    let failures = RIBActorFailureRecorder()
     private(set) var defaultFailureHandler: ((String) -> Void)!
 
     override func setUp() {
         super.setUp()
-        defaultFailureHandler = TreeQueueCheck.failureHandler
+        defaultFailureHandler = RIBActorCheck.failureHandler
         let failures = self.failures
-        TreeQueueCheck.failureHandler = { failures.record($0) }
+        RIBActorCheck.failureHandler = { failures.record($0) }
     }
 
     override func tearDown() {
-        TreeQueueCheck.failureHandler = defaultFailureHandler
+        RIBActorCheck.failureHandler = defaultFailureHandler
         super.tearDown()
     }
 
-    /// Runs `work` as a tree queue job and returns its result. Main runs its run loop while it waits.
+    /// Runs `work` as a RIBActor queue job and returns its result. Main runs its run loop while it waits.
     @discardableResult
     func onTree<T>(_ work: @escaping () -> T) -> T {
         let done = expectation(description: "tree job")
@@ -77,7 +77,7 @@ class TreeQueueTestCase: XCTestCase {
         return result!
     }
 
-    /// Waits until the tree queue has finished the jobs queued before this call.
+    /// Waits until the RIBActor queue has finished the jobs queued before this call.
     func drainTree() {
         onTree {}
     }

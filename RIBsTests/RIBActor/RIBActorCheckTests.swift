@@ -2,7 +2,7 @@ import CwlPreconditionTesting
 @testable import RIBs
 import XCTest
 
-final class TreeQueueCheckTests: TreeQueueTestCase {
+final class RIBActorCheckTests: RIBActorTestCase {
 
     private var root: Router<Interactor>!
 
@@ -11,7 +11,7 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
         let tree = self.tree
         root = onTree {
             let root = Router<Interactor>(interactor: InteractorMock())
-            root.treeQueue = tree
+            root.ribActorQueue = tree
             root.interactable.activate()
             root.load()
             return root
@@ -27,14 +27,14 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
 
     // MARK: - A wrong-thread call is reported
 
-    func test_attachChild_offTreeQueue_reportsFailure() {
+    func test_attachChild_offRIBActorQueue_reportsFailure() {
         root.attachChild(Router<Interactor>(interactor: InteractorMock()))
 
         XCTAssertEqual(failures.messages.first?.contains("attachChild"), true, "\(failures.messages)")
         XCTAssertEqual(failures.messages.first?.contains(Self.treeLabel), true, "\(failures.messages)")
     }
 
-    func test_detachChild_offTreeQueue_reportsFailure() {
+    func test_detachChild_offRIBActorQueue_reportsFailure() {
         let child = Router<Interactor>(interactor: InteractorMock())
         let root = self.root!
         onTree { root.attachChild(child) }
@@ -45,9 +45,9 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
         XCTAssertEqual(failures.messages.first?.contains("detachChild"), true, "\(failures.messages)")
     }
 
-    func test_load_offTreeQueue_reportsFailure() {
+    func test_load_offRIBActorQueue_reportsFailure() {
         let router = Router<Interactor>(interactor: InteractorMock())
-        router.treeQueue = tree
+        router.ribActorQueue = tree
 
         router.load()
 
@@ -55,10 +55,10 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
         XCTAssertEqual(failures.messages.first?.contains("load"), true, "\(failures.messages)")
     }
 
-    func test_activate_offTreeQueue_reportsFailure() {
+    func test_activate_offRIBActorQueue_reportsFailure() {
         let interactor = InteractorMock()
         let router = Router<Interactor>(interactor: interactor)
-        router.treeQueue = tree
+        router.ribActorQueue = tree
 
         interactor.activate()
 
@@ -67,10 +67,10 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
         _ = router
     }
 
-    func test_deactivate_offTreeQueue_reportsFailure_onlyWhenActive() {
+    func test_deactivate_offRIBActorQueue_reportsFailure_onlyWhenActive() {
         let interactor = InteractorMock()
         let router = Router<Interactor>(interactor: interactor)
-        router.treeQueue = tree
+        router.ribActorQueue = tree
         onTree { interactor.activate() }
         XCTAssertEqual(failures.messages, [])
 
@@ -88,14 +88,14 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
     func test_defaultFailureHandler_stopsTheProcess() {
         let handler = defaultFailureHandler!
         let exception = catchBadInstruction {
-            handler("tree queue check")
+            handler("RIBActor check")
         }
         XCTAssertNotNil(exception)
     }
 
     // MARK: - A right-thread call is not reported
 
-    func test_treeCalls_onTreeQueue_reportNoFailure() {
+    func test_treeCalls_onRIBActorQueue_reportNoFailure() {
         let root = self.root!
         onTree {
             let child = Router<Interactor>(interactor: InteractorMock())
@@ -106,7 +106,7 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
         XCTAssertEqual(failures.messages, [])
     }
 
-    func test_treeCalls_onQueueThatTargetsTheTreeQueue_reportNoFailure() {
+    func test_treeCalls_onQueueThatTargetsTheRIBActorQueue_reportNoFailure() {
         let root = self.root!
         let inner = DispatchQueue(label: "ribs.tests.tree.inner", target: tree)
         let done = expectation(description: "inner job")
@@ -121,7 +121,7 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
         XCTAssertEqual(failures.messages, [])
     }
 
-    func test_treeCalls_withNoTreeQueue_reportNoFailure_onAnyThread() {
+    func test_treeCalls_withNoRIBActorQueue_reportNoFailure_onAnyThread() {
         let done = expectation(description: "background job")
         var childQueue: DispatchQueue? = tree
         DispatchQueue.global().async {
@@ -130,7 +130,7 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
             parent.interactable.activate()
             parent.load()
             parent.attachChild(child)
-            let queue = child.treeQueue
+            let queue = child.ribActorQueue
             parent.detachChild(child)
             parent.interactable.deactivate()
             DispatchQueue.main.async {
@@ -144,9 +144,9 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
         XCTAssertEqual(failures.messages, [])
     }
 
-    // MARK: - The tree queue reference is inherited
+    // MARK: - The RIBActor queue reference is inherited
 
-    func test_attachChild_passesTheTreeQueueToTheSubtree() {
+    func test_attachChild_passesTheRIBActorQueueToTheSubtree() {
         let root = self.root!
         let childInteractor = InteractorMock()
         let child = Router<Interactor>(interactor: childInteractor)
@@ -156,9 +156,9 @@ final class TreeQueueCheckTests: TreeQueueTestCase {
             child.attachChild(grandchild)
         }
 
-        XCTAssert(child.treeQueue === tree)
-        XCTAssert(childInteractor.treeQueue === tree)
-        XCTAssert(grandchild.treeQueue === tree)
+        XCTAssert(child.ribActorQueue === tree)
+        XCTAssert(childInteractor.ribActorQueue === tree)
+        XCTAssert(grandchild.ribActorQueue === tree)
         XCTAssertEqual(failures.messages, [])
     }
 }

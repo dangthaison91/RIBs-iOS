@@ -1,7 +1,7 @@
 @testable import RIBs
 import XCTest
 
-final class LaunchRouterTreeQueueTests: TreeQueueTestCase {
+final class LaunchRouterRIBActorTests: RIBActorTestCase {
 
     private var interactor: InteractorMock!
     private var viewController: ViewControllableMock!
@@ -27,8 +27,8 @@ final class LaunchRouterTreeQueueTests: TreeQueueTestCase {
         super.tearDown()
     }
 
-    func test_launchFromWindow_withTreeQueue_setsTheWindowRootOnMain_activatesOnTheTreeQueue() {
-        launchRouter.treeQueue = tree
+    func test_launchFromWindow_withRIBActorQueue_setsTheWindowRootOnMain_activatesOnTheRIBActorQueue() {
+        launchRouter.ribActorQueue = tree
         let activated = expectation(description: "activated")
         var activationQueue: String?
         interactor.didBecomeActiveHandler = {
@@ -49,7 +49,7 @@ final class LaunchRouterTreeQueueTests: TreeQueueTestCase {
     }
 
     func test_showRootViewController_setsTheWindowRoot_doesNotActivate() {
-        launchRouter.treeQueue = tree
+        launchRouter.ribActorQueue = tree
 
         launchRouter.showRootViewController(in: window)
 
@@ -59,8 +59,8 @@ final class LaunchRouterTreeQueueTests: TreeQueueTestCase {
         XCTAssertEqual(failures.messages, [])
     }
 
-    func test_activateAndLoad_onTheTreeQueue_activatesAndLoads() {
-        launchRouter.treeQueue = tree
+    func test_activateAndLoad_onTheRIBActorQueue_activatesAndLoads() {
+        launchRouter.ribActorQueue = tree
         let launchRouter = self.launchRouter!
 
         onTree { launchRouter.activateAndLoad() }
@@ -70,7 +70,7 @@ final class LaunchRouterTreeQueueTests: TreeQueueTestCase {
         XCTAssertEqual(failures.messages, [])
     }
 
-    func test_launchFromWindow_withNoTreeQueue_activatesBeforeItReturns() {
+    func test_launchFromWindow_withNoRIBActorQueue_activatesBeforeItReturns() {
         launchRouter.launch(from: window)
 
         XCTAssert(window.rootViewController === viewController.uiviewController)

@@ -38,16 +38,16 @@ open class LaunchRouter<InteractorType, ViewControllerType>: ViewableRouter<Inte
 
     /// Launches the router tree.
     ///
-    /// With no tree queue, the tree is active and loaded when this method returns. With a tree queue, this
-    /// method sets the window root, then runs `activateAndLoad()` as a block on the tree queue, so the tree
+    /// With no RIBActor queue, the tree is active and loaded when this method returns. With a RIBActor queue, this
+    /// method sets the window root, then runs `activateAndLoad()` as a block on the RIBActor queue, so the tree
     /// becomes active after this method returns.
     ///
     /// - parameter window: The window to launch the router tree in.
     public final func launch(from window: UIWindow) {
         showRootViewController(in: window)
 
-        if let treeQueue {
-            treeQueue.async {
+        if let ribActorQueue {
+            ribActorQueue.async {
                 self.activateAndLoad()
             }
         } else {
