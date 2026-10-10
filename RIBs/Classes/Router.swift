@@ -254,11 +254,11 @@ open class Router<InteractorType>: Routing, TreeQueueOwning {
 
 /// The check that a tree call runs on the tree queue of its tree. It is compiled in debug builds only, which
 /// includes test builds.
-enum TreeQueueCheck {
+public enum TreeQueueCheck {
 
-    /// Called with a message when a tree call runs off its tree queue. The default stops the process. A test
-    /// replaces it to observe the failure.
-    static var failureHandler: (String) -> Void = { message in
+    /// Called with a message when a tree call runs off its tree queue. The default stops the process. This is a
+    /// debug and test hook: test support replaces it to observe the failure. Application code does not set it.
+    public static var failureHandler: (String) -> Void = { message in
         preconditionFailure(message)
     }
 
