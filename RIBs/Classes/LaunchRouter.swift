@@ -38,11 +38,34 @@ open class LaunchRouter<InteractorType, ViewControllerType>: ViewableRouter<Inte
 
     /// Launches the router tree.
     ///
+    /// With no tree queue, the tree is active and loaded when this method returns. With a tree queue, this
+    /// method sets the window root, then runs `activateAndLoad()` as a block on the tree queue, so the tree
+    /// becomes active after this method returns.
+    ///
     /// - parameter window: The window to launch the router tree in.
     public final func launch(from window: UIWindow) {
+        showRootViewController(in: window)
+
+        if let treeQueue {
+            treeQueue.async {
+                self.activateAndLoad()
+            }
+        } else {
+            activateAndLoad()
+        }
+    }
+
+    /// The main-thread part of `launch(from:)`: makes the view controller of this router the root of the window.
+    ///
+    /// - parameter window: The window to launch the router tree in.
+    public final func showRootViewController(in window: UIWindow) {
         window.rootViewController = viewControllable.uiviewController
         window.makeKeyAndVisible()
+    }
 
+    /// The tree part of `launch(from:)`: activates the interactor and loads this router. Call it on the tree
+    /// queue when this router has one.
+    public final func activateAndLoad() {
         interactable.activate()
         load()
     }
