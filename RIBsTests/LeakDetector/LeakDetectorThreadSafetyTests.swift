@@ -108,6 +108,62 @@ final class LeakDetectorThreadSafetyTests: XCTestCase {
         waitForStatus(.DidComplete)
     }
 
+    /// `NSMapTable` retains and autoreleases the live objects it holds when it grows. When the owner of such an
+    /// object releases it on another thread before the pool drains, the pool holds the last reference, and the
+    /// `deinit` runs on the thread that grows the table. A `deinit` that registers an expectation, as a
+    /// Router that detaches a child does, must not find the lock held by its own thread.
+    func test_expectDeallocate_whenADeinitDuringTableGrowthRegistersAnExpectation_completes() {
+        LeakDetector.disableLeakDetectorOverride = true
+        let detector = LeakDetector()
+        let reentryCount = Counter()
+        let growerKey = "LeakDetectorThreadSafetyTests.grower"
+        let finished = expectation(description: "every thread finished")
+
+        DispatchQueue.global().async {
+            DispatchQueue.concurrentPerform(iterations: 4) { thread in
+                if thread == 0 {
+                    Thread.current.threadDictionary[growerKey] = true
+                    var registered = 0
+                    while reentryCount.value == 0, registered < 200_000 {
+                        autoreleasepool {
+                            _ = detector.expectDeallocate(object: NSObject(), inTime: 0.01)
+                        }
+                        registered += 1
+                    }
+                    Thread.current.threadDictionary[growerKey] = nil
+                    reentryCount.finish()
+                } else {
+                    // Owns a few live tracked objects and releases them slowly, without the lock, so that a
+                    // release falls inside a growth of the table on the grower thread.
+                    while !reentryCount.isFinished {
+                        var owned: [RegistersOnDeinit] = []
+                        for _ in 0 ..< 32 {
+                            let object = RegistersOnDeinit {
+                                guard Thread.current.threadDictionary[growerKey] != nil else { return }
+                                reentryCount.increment()
+                                _ = detector.expectDeallocate(object: NSObject(), inTime: 0.01)
+                            }
+                            _ = detector.expectDeallocate(object: object, inTime: 0.5)
+                            owned.append(object)
+                        }
+                        while owned.popLast() != nil {
+                            var spin = 0
+                            for step in 0 ..< 20_000 { spin &+= step }
+                            _ = spin
+                        }
+                    }
+                }
+            }
+            DispatchQueue.main.async { finished.fulfill() }
+        }
+
+        // With the pool inside the lock, the grower thread waits for itself. The checks that run on main wait
+        // for the same lock, so this wait does not time out: the run stops at the test time allowance.
+        executionTimeAllowance = 120
+        wait(for: [finished], timeout: 120)
+        XCTAssertGreaterThan(reentryCount.value, 0, "No tracked object was released by the pool of a growth; the case did not run.")
+    }
+
     // MARK: - Private
 
     private func currentStatus() -> LeakDetectionStatus? {
@@ -124,5 +180,43 @@ final class LeakDetectorThreadSafetyTests: XCTestCase {
             .filter { $0 == expected }
             .subscribe(onNext: { _ in reached.fulfill() })
         wait(for: [reached], timeout: 30)
+    }
+}
+
+private final class RegistersOnDeinit {
+    private let onDeinit: () -> Void
+
+    init(onDeinit: @escaping () -> Void) {
+        self.onDeinit = onDeinit
+    }
+
+    deinit {
+        onDeinit()
+    }
+}
+
+private final class Counter {
+    private let lock = NSLock()
+    private var count = 0
+    private var finished = false
+
+    var value: Int {
+        lock.lock(); defer { lock.unlock() }
+        return count
+    }
+
+    var isFinished: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return finished
+    }
+
+    func increment() {
+        lock.lock(); defer { lock.unlock() }
+        count += 1
+    }
+
+    func finish() {
+        lock.lock(); defer { lock.unlock() }
+        finished = true
     }
 }

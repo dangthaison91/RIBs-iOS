@@ -172,15 +172,17 @@ public class LeakDetector {
     private var nextKey: UInt64 = 0
 
     private func track(_ object: AnyObject) -> NSString {
-        lock.lock(); defer { lock.unlock() }
-        nextKey += 1
-        let key = String(nextKey) as NSString
         // `NSMapTable` autoreleases the live objects it holds when it grows. Without a pool here they stay
-        // alive until the caller's thread pops its own pool, which can be after their deadline.
-        autoreleasepool {
+        // alive until the caller's thread pops its own pool, which can be after their deadline. The pool is
+        // around the lock scope, so it drains after the unlock: a `deinit` that runs in the drain may call
+        // back into this detector.
+        return autoreleasepool {
+            lock.lock(); defer { lock.unlock() }
+            nextKey += 1
+            let key = String(nextKey) as NSString
             trackingObjects.setObject(object, forKey: key)
+            return key
         }
-        return key
     }
 
     private func isDeallocated(_ key: NSString) -> Bool {
