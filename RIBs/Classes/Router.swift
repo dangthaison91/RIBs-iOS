@@ -14,6 +14,7 @@
 //  limitations under the License.
 //
 
+import Dispatch
 import RxSwift
 
 /// The lifecycle stages of a router scope.
@@ -65,6 +66,11 @@ public protocol Routing: RouterScope {
     func detachChild(_ child: Routing)
 }
 
+/// A node that can inherit the tree queue of its parent at `attachChild`.
+protocol TreeQueueOwning: AnyObject {
+    var treeQueue: DispatchQueue? { get set }
+}
+
 /// The base class of all routers that does not own view controllers, representing application states.
 ///
 /// A router acts on inputs from its corresponding interactor, to manipulate application state, forming a tree of
@@ -73,7 +79,7 @@ public protocol Routing: RouterScope {
 /// Router drives the lifecycle of its owned `Interactor`.
 ///
 /// Routers should always use helper builders to instantiate children routers.
-open class Router<InteractorType>: Routing {
+open class Router<InteractorType>: Routing, TreeQueueOwning {
 
     /// The corresponding `Interactor` owned by this `Router`.
     public let interactor: InteractorType
@@ -83,6 +89,17 @@ open class Router<InteractorType>: Routing {
 
     /// The list of children `Router`s of this `Router`.
     public final var children: [Routing] = []
+
+    /// The serial queue that owns this router tree. Set it on the root before `load()`; a child inherits it in
+    /// `attachChild`. `nil` turns the queue check off.
+    public final var treeQueue: DispatchQueue? {
+        didSet {
+            if let treeQueue {
+                TreeQueueCheck.mark(treeQueue)
+            }
+            (interactable as? Interactor)?.treeQueue = treeQueue
+        }
+    }
 
     /// The observable that emits values when the router scope reaches its corresponding life-cycle stages.
     ///
@@ -107,6 +124,7 @@ open class Router<InteractorType>: Routing {
     /// - note: This method is internally used by the framework. Application code should never invoke this method
     ///   explicitly.
     public final func load() {
+        checkOnTreeQueue(treeQueue)
         guard !didLoadFlag else {
             return
         }
@@ -131,9 +149,13 @@ open class Router<InteractorType>: Routing {
     ///
     /// - parameter child: The child `Router` to attach.
     public final func attachChild(_ child: Routing) {
+        checkOnTreeQueue(treeQueue)
         assert(!(children.contains { $0 === child }), "Attempt to attach child: \(child), which is already attached to \(self).")
 
         children.append(child)
+        if let treeQueue, let child = child as? TreeQueueOwning {
+            child.treeQueue = treeQueue
+        }
 
         // Activate child first before loading. Router usually attaches immutable children in didLoad.
         // We need to make sure the RIB is activated before letting it attach immutable children.
@@ -145,6 +167,7 @@ open class Router<InteractorType>: Routing {
     ///
     /// - parameter child: The child `Router` to detach.
     public final func detachChild(_ child: Routing) {
+        checkOnTreeQueue(treeQueue)
         child.interactable.deactivate()
 
         children.removeElementByReference(child)
@@ -212,6 +235,9 @@ open class Router<InteractorType>: Routing {
     }
 
     deinit {
+        // No queue check in deinit: the last reference can be released on any thread.
+        (interactable as? Interactor)?.treeQueue = nil
+        treeQueue = nil
         interactable.deactivate()
 
         if !children.isEmpty {
@@ -224,4 +250,40 @@ open class Router<InteractorType>: Routing {
 
         LeakDetector.instance.expectDeallocate(object: interactable)
     }
+}
+
+/// The check that a tree call runs on the tree queue of its tree. It is compiled in debug builds only, which
+/// includes test builds.
+enum TreeQueueCheck {
+
+    /// Called with a message when a tree call runs off its tree queue. The default stops the process. A test
+    /// replaces it to observe the failure.
+    static var failureHandler: (String) -> Void = { message in
+        preconditionFailure(message)
+    }
+
+    /// Marks `queue`, so that `isCurrent(_:)` can find it from a block that runs on it.
+    static func mark(_ queue: DispatchQueue) {
+        #if DEBUG
+            queue.setSpecific(key: key, value: ObjectIdentifier(queue))
+        #endif
+    }
+
+    /// `true` when the caller runs on `queue`, or on a queue that targets it.
+    static func isCurrent(_ queue: DispatchQueue) -> Bool {
+        return DispatchQueue.getSpecific(key: key) == ObjectIdentifier(queue)
+    }
+
+    private static let key = DispatchSpecificKey<ObjectIdentifier>()
+}
+
+/// Reports a tree call that runs off `queue`. `nil` turns the check off.
+@inline(__always)
+func checkOnTreeQueue(_ queue: DispatchQueue?, _ call: StaticString = #function) {
+    #if DEBUG
+        if let queue, !TreeQueueCheck.isCurrent(queue) {
+            let current = String(cString: __dispatch_queue_get_label(nil))
+            TreeQueueCheck.failureHandler("\(call) ran on queue [\(current)], not on the tree queue [\(queue.label)].")
+        }
+    #endif
 }
