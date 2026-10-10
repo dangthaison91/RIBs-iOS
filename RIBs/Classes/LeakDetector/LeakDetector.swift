@@ -81,22 +81,21 @@ public class LeakDetector {
     /// - returns: The handle that can be used to cancel the expectation.
     @discardableResult
     public func expectDeallocate(object: AnyObject, inTime time: TimeInterval = LeakDefaultExpectationTime.deallocation) -> LeakDetectionHandle {
-        expectationCount.accept(expectationCount.value + 1)
+        changeExpectationCount(by: 1)
 
         let objectDescription = String(describing: object)
-        let objectId = String(ObjectIdentifier(object).hashValue) as NSString
-        trackingObjects.setObject(object, forKey: objectId)
+        let objectId = track(object)
 
         let handle = LeakDetectionHandleImpl {
-            self.expectationCount.accept(self.expectationCount.value - 1)
+            self.changeExpectationCount(by: -1)
         }
 
         Executor.execute(withDelay: time) {
             // Retain the handle so we can check for the cancelled status. Also cannot use the cancellable
             // concurrency API since the returned handle must be retained to ensure closure is executed.
             if !handle.cancelled {
-                let didDeallocate = (self.trackingObjects.object(forKey: objectId) == nil)
-                let message = "<\(objectDescription): \(objectId)> has leaked. Objects are expected to be deallocated at this time: \(self.trackingObjects)"
+                let didDeallocate = self.isDeallocated(objectId)
+                let message = didDeallocate ? "" : "<\(objectDescription): \(objectId)> has leaked. Objects are expected to be deallocated at this time: \(self.trackingDescription())"
 
                 if self.disableLeakDetector {
                     if !didDeallocate {
@@ -108,7 +107,7 @@ public class LeakDetector {
                 }
             }
 
-            self.expectationCount.accept(self.expectationCount.value - 1)
+            self.changeExpectationCount(by: -1)
         }
 
         return handle
@@ -121,10 +120,10 @@ public class LeakDetector {
     /// - returns: The handle that can be used to cancel the expectation.
     @discardableResult
     public func expectViewControllerDisappear(viewController: UIViewController, inTime time: TimeInterval = LeakDefaultExpectationTime.viewDisappear) -> LeakDetectionHandle {
-        expectationCount.accept(expectationCount.value + 1)
+        changeExpectationCount(by: 1)
 
         let handle = LeakDetectionHandleImpl {
-            self.expectationCount.accept(self.expectationCount.value - 1)
+            self.changeExpectationCount(by: -1)
         }
 
         Executor.execute(withDelay: time) { [weak viewController] in
@@ -132,7 +131,7 @@ public class LeakDetector {
             // concurrency API since the returned handle must be retained to ensure closure is executed.
             if let viewController = viewController, !handle.cancelled {
                 let viewDidDisappear = (!viewController.isViewLoaded || viewController.view.window == nil)
-                let message = "\(viewController) appearance has leaked. Either its parent router who does not own a view controller was detached, but failed to dismiss the leaked view controller; or the view controller is reused and re-added to window, yet the router is not re-attached but re-created. Objects are expected to be deallocated at this time: \(self.trackingObjects)"
+                let message = viewDidDisappear ? "" : "\(viewController) appearance has leaked. Either its parent router who does not own a view controller was detached, but failed to dismiss the leaked view controller; or the view controller is reused and re-added to window, yet the router is not re-attached but re-created. Objects are expected to be deallocated at this time: \(self.trackingDescription())"
 
                 if self.disableLeakDetector {
                     if !viewDidDisappear {
@@ -144,7 +143,7 @@ public class LeakDetector {
                 }
             }
 
-            self.expectationCount.accept(self.expectationCount.value - 1)
+            self.changeExpectationCount(by: -1)
         }
 
         return handle
@@ -158,8 +157,10 @@ public class LeakDetector {
     #if DEBUG
         /// Reset the state of Leak Detector, internal for UI test only.
         func reset() {
+            lock.lock()
             trackingObjects.removeAllObjects()
             expectationCount.accept(0)
+            lock.unlock()
         }
     #endif
 
@@ -167,6 +168,37 @@ public class LeakDetector {
 
     private let trackingObjects = NSMapTable<AnyObject, AnyObject>.strongToWeakObjects()
     private let expectationCount = BehaviorRelay<Int>(value: 0)
+    private let lock = NSLock()
+    private var nextKey: UInt64 = 0
+
+    private func track(_ object: AnyObject) -> NSString {
+        // `NSMapTable` autoreleases the live objects it holds when it grows. Without a pool here they stay
+        // alive until the caller's thread pops its own pool, which can be after their deadline. The pool is
+        // around the lock scope, so it drains after the unlock: a `deinit` that runs in the drain may call
+        // back into this detector.
+        return autoreleasepool {
+            lock.lock(); defer { lock.unlock() }
+            nextKey += 1
+            let key = String(nextKey) as NSString
+            trackingObjects.setObject(object, forKey: key)
+            return key
+        }
+    }
+
+    private func isDeallocated(_ key: NSString) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return trackingObjects.object(forKey: key) == nil
+    }
+
+    private func trackingDescription() -> String {
+        lock.lock(); defer { lock.unlock() }
+        return "\(trackingObjects)"
+    }
+
+    private func changeExpectationCount(by delta: Int) {
+        lock.lock(); defer { lock.unlock() }
+        expectationCount.accept(expectationCount.value + delta)
+    }
 
     lazy var disableLeakDetector: Bool = {
         if let environmentValue = ProcessInfo().environment["DISABLE_LEAK_DETECTION"] {

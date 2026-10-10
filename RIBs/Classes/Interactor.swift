@@ -14,6 +14,7 @@
 //  limitations under the License.
 //
 
+import Dispatch
 import Foundation
 import RxSwift
 import UIKit
@@ -90,6 +91,7 @@ open class Interactor: Interactable {
     /// - note: This method is internally invoked by the corresponding router. Application code should never explicitly
     ///   invoke this method.
     public final func activate() {
+        checkOnRIBActorQueue(ribActorQueue)
         guard !isActive else {
             return
         }
@@ -117,6 +119,8 @@ open class Interactor: Interactable {
         guard isActive else {
             return
         }
+        // Checked after the guard: a release path deactivates an inactive `Interactor` on any thread.
+        checkOnRIBActorQueue(ribActorQueue)
 
         willResignActive()
 
@@ -138,8 +142,17 @@ open class Interactor: Interactable {
 
     private let isActiveSubject = BehaviorSubject<Bool>(value: false)
     fileprivate var activenessDisposable: CompositeDisposable?
+    var ribActorQueue: DispatchQueue? {
+        didSet {
+            if let ribActorQueue {
+                RIBActorCheck.mark(ribActorQueue)
+            }
+        }
+    }
 
     deinit {
+        // No queue check in deinit: the last reference can be released on any thread.
+        ribActorQueue = nil
         if isActive {
             deactivate()
         }
