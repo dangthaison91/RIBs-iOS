@@ -175,7 +175,11 @@ public class LeakDetector {
         lock.lock(); defer { lock.unlock() }
         nextKey += 1
         let key = String(nextKey) as NSString
-        trackingObjects.setObject(object, forKey: key)
+        // `NSMapTable` autoreleases the live objects it holds when it grows. Without a pool here they stay
+        // alive until the caller's thread pops its own pool, which can be after their deadline.
+        autoreleasepool {
+            trackingObjects.setObject(object, forKey: key)
+        }
         return key
     }
 

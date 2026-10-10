@@ -82,6 +82,32 @@ final class LeakDetectorThreadSafetyTests: XCTestCase {
         waitForStatus(.DidComplete)
     }
 
+    /// `NSMapTable` autoreleases the live objects it holds when it grows. A tracked object must still be
+    /// released with its last reference, also on a thread that pops its autorelease pool late.
+    func test_expectDeallocate_whenTheTableGrows_doesNotExtendTheLifetimeOfATrackedObject() {
+        let detector = self.detector!
+        var keptAliveCount = 0
+
+        // One pool around the whole loop, as on a worker thread that stays busy.
+        autoreleasepool {
+            for _ in 0 ..< 100 {
+                weak var tracked: NSObject?
+                do {
+                    let object = NSObject()
+                    tracked = object
+                    detector.expectDeallocate(object: object, inTime: 0.05)
+                    // A second registration while `object` is alive, as a Router and its Interactor do for
+                    // one view controller.
+                    detector.expectDeallocate(object: NSObject(), inTime: 0.05)
+                }
+                if tracked != nil { keptAliveCount += 1 }
+            }
+        }
+
+        XCTAssertEqual(keptAliveCount, 0)
+        waitForStatus(.DidComplete)
+    }
+
     // MARK: - Private
 
     private func currentStatus() -> LeakDetectionStatus? {
