@@ -101,6 +101,93 @@ final class ObservableConcurrencyTests: XCTestCase {
         await fulfillment(of: [completed], timeout: 1)
         XCTAssertEqual(receivedValues, [1])
     }
+
+    @MainActor
+    func test_singleFromAsync_doesNotRunWorkWhenDisposedBeforeTaskStarts() async {
+        let workRan = expectation(description: "Work ran after dispose")
+        workRan.isInverted = true
+
+        withSaturatedCooperativePool {
+            Single<Int>.fromAsync {
+                workRan.fulfill()
+                return 1
+            }
+            .subscribe()
+            .dispose()
+        }
+
+        await fulfillment(of: [workRan], timeout: 1)
+    }
+
+    @MainActor
+    func test_observableFromAsync_doesNotRunWorkWhenDisposedBeforeTaskStarts() async {
+        let workRan = expectation(description: "Work ran after dispose")
+        workRan.isInverted = true
+
+        withSaturatedCooperativePool {
+            Observable<Int>.fromAsync {
+                workRan.fulfill()
+                return 1
+            }
+            .subscribe()
+            .dispose()
+        }
+
+        await fulfillment(of: [workRan], timeout: 1)
+    }
+
+    func test_singleFromAsync_doesNotEmitWhenDisposedWhileWorkIsRunning() async {
+        let workStarted = expectation(description: "Work started")
+        let workMayFinish = DispatchSemaphore(value: 0)
+        let emitted = expectation(description: "Emitted after dispose")
+        emitted.isInverted = true
+
+        let disposable = Single<Int>.fromAsync {
+            workStarted.fulfill()
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global().async {
+                    workMayFinish.wait()
+                    continuation.resume()
+                }
+            }
+            return 1
+        }
+        .subscribe(onSuccess: { _ in emitted.fulfill() }, onFailure: { _ in emitted.fulfill() })
+
+        await fulfillment(of: [workStarted], timeout: 2)
+        disposable.dispose()
+        workMayFinish.signal()
+        await fulfillment(of: [emitted], timeout: 1)
+    }
+
+    /// Runs `body` while every cooperative-pool thread is blocked, so a `Task` created inside `body` cannot start
+    /// before `body` returns. This makes "dispose before the task starts" deterministic. It blocks the main thread
+    /// with plain semaphores and never awaits: XCTest's own awaits would need a pool thread and deadlock.
+    @MainActor
+    private func withSaturatedCooperativePool(_ body: () -> Void) {
+        let workerCount = ProcessInfo.processInfo.activeProcessorCount
+        let release = DispatchSemaphore(value: 0)
+        let blockersRunning = DispatchGroup()
+
+        for _ in 0 ..< workerCount {
+            blockersRunning.enter()
+            Task.detached {
+                blockersRunning.leave()
+                release.wait()
+            }
+        }
+        defer {
+            for _ in 0 ..< workerCount {
+                release.signal()
+            }
+        }
+        guard blockersRunning.wait(timeout: .now() + 2) == .success else {
+            XCTFail("Could not saturate the cooperative pool")
+            return
+        }
+
+        body()
+    }
 }
 
 private enum ObservableConcurrencyTestError: Error {

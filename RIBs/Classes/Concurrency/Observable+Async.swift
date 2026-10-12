@@ -21,9 +21,13 @@ import RxSwift
 public extension PrimitiveSequenceType where Trait == SingleTrait {
 
     /// Create a cold single that runs the given async work on subscription.
+    /// Disposing the subscription cancels the task. If that happens before the task starts, `work` never runs.
     static func fromAsync(_ work: @escaping () async throws -> Element) -> Single<Element> {
         return .create { observer in
             let task = Task {
+                // Disposal cancels the task, but a cancelled task still starts. Skip the work and emit nothing:
+                // the observer is already disposed, and the work may have side effects.
+                guard !Task.isCancelled else { return }
                 do {
                     observer(.success(try await work()))
                 } catch {
